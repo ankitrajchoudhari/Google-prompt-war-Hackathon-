@@ -82,6 +82,7 @@ function App() {
   const [sentiment, setSentiment] = useState(null);
   const [evacuationRoutes, setEvacuationRoutes] = useState([]);
   const [revenueStats, setRevenueStats] = useState(null);
+  const [predictionTime, setPredictionTime] = useState(0); // Minutes into future
 
   const [userPrefs] = useState({
     seat: 'Sec 104, Row G',
@@ -139,7 +140,13 @@ function App() {
           const dy = u.y - loc.y;
           return Math.sqrt(dx * dx + dy * dy) < loc.radius;
         }).length;
-        const density = Math.min(100, (count / loc.capacity) * 100);
+        const densityBase = Math.min(100, (count / loc.capacity) * 100);
+        
+        // Time travel prediction logic
+        const density = predictionTime > 0 
+          ? Math.min(100, densityBase * (1 + (predictionTime / 60) * (eventMomentum > 0.5 ? 0.3 : -0.2)))
+          : densityBase;
+
         const predictedWait = mlModel.predict(density, loc.baseline, eventMomentum, weatherImpact);
         return { ...loc, locationId: loc.id, count, density, predictedWait };
       });
@@ -374,12 +381,26 @@ function App() {
       <div className="footer-controls">
         <div>
           <label style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
-            Weather Impact
+            Weather Forecast
           </label>
           <input type="range" min="0" max="100" value={weatherImpact * 100}
             onChange={(e) => setWeatherImpact(e.target.value / 100)}
-            style={{ width: '100%', accentColor: 'var(--primary)', height: 4 }}
+            style={{ width: '100%', accentColor: 'var(--low)', height: 4 }}
           />
+        </div>
+        <div>
+          <label style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+            Time Travel (ML)
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: '0.5rem', fontWeight: 700, color: predictionTime > 0 ? 'var(--primary)' : 'var(--text-muted)', width: 24 }}>
+              {predictionTime === 0 ? 'LIVE' : `+${predictionTime}m`}
+            </span>
+            <input type="range" min="0" max="60" step="15" value={predictionTime}
+              onChange={(e) => setPredictionTime(parseInt(e.target.value))}
+              style={{ flex: 1, accentColor: 'var(--primary)', height: 4 }}
+            />
+          </div>
         </div>
         <div>
           <label style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
@@ -387,7 +408,7 @@ function App() {
           </label>
           <input type="range" min="0" max="100" value={eventMomentum * 100}
             onChange={(e) => setEventMomentum(e.target.value / 100)}
-            style={{ width: '100%', accentColor: 'var(--primary)', height: 4 }}
+            style={{ width: '100%', accentColor: 'var(--secondary)', height: 4 }}
           />
         </div>
         <div>

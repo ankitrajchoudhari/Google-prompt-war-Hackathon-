@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Map as MapIcon, Layers, Radio, Eye, ShieldAlert } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Map as MapIcon, Layers, Radio, Eye, Search, Target } from 'lucide-react';
 import SignalHeatmap from './SignalHeatmap';
 
 // ─── Stadium Structure ─────────────────────────────
@@ -21,12 +21,6 @@ const STADIUM_SECTIONS = [
   { type: 'section', id: 'SEC-112', x: 120, y: 320, w: 60, h: 25, label: '112' },
 ];
 
-const WALKWAY_PATHS = [
-  'M 55,250 Q 55,120 200,60', 'M 200,60 Q 400,10 600,60',
-  'M 600,60 Q 745,120 745,250', 'M 745,250 Q 745,380 600,440',
-  'M 600,440 Q 400,490 200,440', 'M 200,440 Q 55,380 55,250',
-];
-
 const GATES = [
   { id: 'G-N', label: 'Gate N', x: 400, y: 18 },
   { id: 'G-E', label: 'Gate E', x: 758, y: 250 },
@@ -43,6 +37,43 @@ const VenueMap = ({
   const [mapLayer, setMapLayer] = useState('signal');
   const [hoveredZone, setHoveredZone] = useState(null);
   const [showUsers, setShowUsers] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  const canvasRef = useRef(null);
+
+  // ─── Optimization: Canvas Rendering for Users ──────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !showUsers) return;
+
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Batch draw users
+    ctx.fillStyle = isEmergency ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
+    users.forEach(u => {
+      ctx.beginPath();
+      ctx.arc(u.x, u.y, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Highlight group members
+    ctx.fillStyle = '#6366f1';
+    users.filter(u => u.groupId).forEach(u => {
+      ctx.beginPath();
+      ctx.arc(u.x, u.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      // Glow
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#6366f1';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+  }, [users, showUsers, isEmergency]);
 
   const zoneCards = useMemo(() => {
     if (!densities || densities.length === 0) return [];
@@ -54,18 +85,46 @@ const VenueMap = ({
     });
   }, [densities]);
 
+  const filteredZones = useMemo(() => {
+    if (!searchQuery) return zoneCards;
+    return zoneCards.filter(z => z.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [zoneCards, searchQuery]);
+
   const exits = locations?.filter(l => l.type === 'GATE') || [];
   const getHeat = (zoneId) => heatmapData?.find((h) => h.zoneId === zoneId);
 
   return (
     <div className={`panel-center ${isEmergency ? 'emergency-glow' : ''}`}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div className="panel-section-title" style={{ margin: 0, color: isEmergency ? '#ef4444' : 'inherit' }}>
-          <MapIcon size={12} /> {isEmergency ? '⚠️ EVACUATION ROUTER' : 'Live Venue Map'}
-          <span style={{ fontSize: '0.45rem', color: isEmergency ? '#ef4444' : 'var(--text-muted)', marginLeft: 8, fontWeight: 700 }}>
-            {isEmergency ? 'SAFETY GUIDANCE ACTIVE' : 'CROWD INTELLIGENCE'}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="panel-section-title" style={{ margin: 0, color: isEmergency ? '#ef4444' : 'inherit' }}>
+            <MapIcon size={12} /> {isEmergency ? '⚠️ EVACUATION ROUTER' : 'Live Venue Map'}
+            <span style={{ fontSize: '0.45rem', color: isEmergency ? '#ef4444' : 'var(--text-muted)', marginLeft: 8, fontWeight: 700 }}>
+              {isEmergency ? 'SAFETY GUIDANCE ACTIVE' : 'CROWD INTELLIGENCE'}
+            </span>
+          </div>
+
+          {!isEmergency && (
+            <div style={{ 
+              display: 'flex', alignItems: 'center', gap: 8, 
+              background: 'rgba(255,255,255,0.03)', padding: '4px 12px', 
+              borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)'
+            }}>
+              <Search size={10} color="var(--text-muted)" />
+              <input 
+                type="text" 
+                placeholder="Search venue..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ 
+                  background: 'none', border: 'none', outline: 'none', 
+                  color: 'white', fontSize: '0.6rem', width: 80, fontWeight: 600
+                }}
+              />
+            </div>
+          )}
         </div>
+
         {!isEmergency && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <button onClick={() => setMapLayer(mapLayer === 'signal' ? 'standard' : 'signal')}
@@ -85,7 +144,25 @@ const VenueMap = ({
       </div>
 
       <div className="map-viewport" style={{ position: 'relative' }}>
-        <svg viewBox="0 0 800 500" preserveAspectRatio="xMidYMid meet" style={{ filter: isEmergency ? 'grayscale(0.6) brightness(0.4)' : 'none', transition: 'filter 0.5s ease' }}>
+        {/* ─── LAYER 1: Background Canvas ─── */}
+        <canvas 
+          ref={canvasRef}
+          width={800}
+          height={500}
+          style={{ 
+            position: 'absolute', inset: 0, width: '100%', height: '100%', 
+            pointerEvents: 'none', zIndex: 1,
+            filter: isEmergency ? 'grayscale(1) contrast(0.5)' : 'none'
+          }}
+        />
+
+        {/* ─── LAYER 2: SVG Overlays ─── */}
+        <svg viewBox="0 0 800 500" preserveAspectRatio="xMidYMid meet" style={{ 
+          position: 'absolute', inset: 0, width: '100%', height: '100%',
+          zIndex: 2, pointerEvents: 'auto',
+          filter: isEmergency ? 'grayscale(0.6) brightness(0.4)' : 'none', 
+          transition: 'filter 0.5s ease' 
+        }}>
           <defs>
             <radialGradient id="field-glow" cx="50%" cy="50%">
               <stop offset="0%" stopColor="#10b981" stopOpacity="0.06" /><stop offset="100%" stopColor="#10b981" stopOpacity="0" />
@@ -101,7 +178,6 @@ const VenueMap = ({
 
           <rect width="800" height="500" fill="url(#grid-pattern)" />
           
-          {/* Stadium Viz */}
           <ellipse cx={400} cy={250} rx={370} ry={225} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="2" strokeDasharray="6,3" />
           <ellipse cx={400} cy={250} rx={180} ry={100} fill="url(#field-glow)" stroke="rgba(16,185,129,0.1)" strokeWidth="1" />
           
@@ -109,11 +185,10 @@ const VenueMap = ({
             <rect key={sec.id} x={sec.x} y={sec.y} width={sec.w} height={sec.h} rx={4} fill="rgba(99,102,241,0.02)" stroke="rgba(99,102,241,0.05)" />
           ))}
 
-          {!isEmergency && mapLayer === 'signal' && (
+          {!isEmergency && mapLayer === 'signal' && heatmapData && (
             <SignalHeatmap heatmapData={heatmapData} flowVectors={flowVectors} showSignalRings={showSignalRings} showFlowArrows={showFlowArrows} />
           )}
 
-          {/* Emergency Routes */}
           {isEmergency && evacuationRoutes && evacuationRoutes.map((route, i) => {
             const loc = locations?.find(l => l.id === route.zoneId);
             if (!loc) return null;
@@ -126,33 +201,28 @@ const VenueMap = ({
             );
           })}
 
-          {/* Paths */}
-          {VENUE_GRAPH.edges.map((edge, idx) => {
-            const from = VENUE_GRAPH.nodes.find(n => n.id === edge.from);
-            const to = VENUE_GRAPH.nodes.find(n => n.id === edge.to);
-            if (!from || !to) return null;
-            return <line key={idx} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="rgba(255,255,255,0.02)" strokeWidth="2" />;
-          })}
-
-          {/* Users */}
-          {showUsers && users.slice(0, 300).map(u => (
-            <circle key={u.id} cx={u.x} cy={u.y} r={1.5} fill={u.groupId ? '#6366f1' : 'white'} opacity={0.2} />
-          ))}
-
-          {/* Zone Icons & Cards */}
-          {(isEmergency ? [] : zoneCards).map(zone => {
-            const heat = getHeat(zone.id);
+          {filteredZones.map(zone => {
             const isHovered = hoveredZone === zone.id;
+            const isSearched = searchQuery && zone.name.toLowerCase().includes(searchQuery.toLowerCase());
             const color = getDensityColor(zone.density);
+            
             return (
               <g key={zone.id} onMouseEnter={() => setHoveredZone(zone.id)} onMouseLeave={() => setHoveredZone(null)}>
-                <circle cx={zone.x} cy={zone.y} r={20} fill="rgba(11,15,25,0.9)" stroke={color} strokeWidth="2" />
+                {/* Search pulse */}
+                {isSearched && (
+                  <circle cx={zone.x} cy={zone.y} r={35} fill="none" stroke="var(--primary)" strokeWidth="2">
+                    <animate attributeName="r" values="25;45" dur="1s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="1;0" dur="1s" repeatCount="indefinite" />
+                  </circle>
+                )}
+                
+                <circle cx={zone.x} cy={zone.y} r={20} fill="rgba(11,15,25,0.9)" stroke={isSearched ? 'var(--primary)' : color} strokeWidth={isSearched ? 3 : 2} style={{ transition: 'all 0.3s ease' }} />
                 <text x={zone.x} y={zone.y + 4} textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">
                   {zone.type === 'FOOD' ? '🍔' : zone.type === 'RESTROOM' ? '🚻' : '🏪'}
                 </text>
-                {isHovered && (
+                {(isHovered || isSearched) && (
                   <g transform={`translate(${zone.x - 50}, ${zone.y + 25})`}>
-                    <rect width="100" height="40" rx={8} fill="rgba(11,15,25,0.95)" stroke={color} strokeWidth="1" />
+                    <rect width="100" height="40" rx={8} fill="rgba(11,15,25,0.95)" stroke={isSearched ? 'var(--primary)' : color} strokeWidth="1" />
                     <text x="50" y="15" textAnchor="middle" fill="white" fontSize="8" fontWeight="bold">{zone.name}</text>
                     <text x="50" y="30" textAnchor="middle" fill={color} fontSize="7">{zone.densityPct}% Full • {zone.predictedWait}m</text>
                   </g>
@@ -161,24 +231,30 @@ const VenueMap = ({
             );
           })}
 
-          {/* Danger Zones */}
           {isEmergency && evacuationRoutes?.filter(r => r.isDanger).map((route, i) => {
             const loc = locations?.find(l => l.id === route.zoneId);
             if (!loc) return null;
             return <circle key={i} cx={loc.x} cy={loc.y} r={50} fill="rgba(239, 68, 68, 0.2)" stroke="#ef4444" strokeWidth="2"><animate attributeName="opacity" values="0.2;0.5;0.2" dur="1s" repeatCount="indefinite" /></circle>;
           })}
 
-          {/* Exit Points */}
           {isEmergency && exits.map(gate => (
             <g key={gate.id}>
               <circle cx={gate.x} cy={gate.y} r={30} fill="none" stroke="#10b981" strokeWidth="3"><animate attributeName="r" values="30;45" dur="1.5s" repeatCount="indefinite" /><animate attributeName="opacity" values="1;0" dur="1.5s" repeatCount="indefinite" /></circle>
               <text x={gate.x} y={gate.y - 45} textAnchor="middle" fill="#10b981" fontSize="12" fontWeight="900">SAFE EXIT</text>
             </g>
           ))}
+
+          {/* Real user indicator */}
+          {realDevice && (
+            <g>
+              <circle cx={realDevice.venueX} cy={realDevice.venueY} r={6} fill="var(--primary)" stroke="white" strokeWidth="2" />
+              <text x={realDevice.venueX} y={realDevice.venueY - 12} textAnchor="middle" fill="white" fontSize="7" fontWeight="bold">YOU</text>
+            </g>
+          )}
         </svg>
 
         {isEmergency && (
-          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}>
             <h2 style={{ color: '#ef4444', fontSize: '1.5rem', fontWeight: 900 }}>EMERGENCY EVACUATION</h2>
             <p style={{ color: 'white', fontSize: '0.8rem' }}>FOLLOW GREEN ARROWS TO SAFETY</p>
           </div>
