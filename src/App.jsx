@@ -6,6 +6,14 @@ import { VENUE_GRAPH } from './services/navigationService';
 import { mockLiveScoreAPI, mockPlaceOrder } from './services/advancedServices';
 import { detectIntentAndEntities, generateDialogflowResponse } from './services/dialogflowService';
 import { model as mlModel } from './services/mlPredictionService';
+import { SignalTrackingService } from './services/signalTrackingService';
+import {
+  detectAnomalies,
+  buildHeatmapData,
+  computeFlowVectors,
+  smartCrowdPrediction,
+  generateCrowdDigest,
+} from './services/crowdIntelligenceService';
 
 // Components
 import HackathonSplash from './components/HackathonSplash';
@@ -18,6 +26,7 @@ import SuggestionsPanel from './components/SuggestionsPanel';
 import LiveEventFeed from './components/LiveEventFeed';
 import Chatbot from './components/Chatbot';
 import AdminController from './components/AdminController';
+import SignalDashboard from './components/SignalDashboard';
 
 // ─── Venue Configuration ───────────────────────
 const VENUE = {
@@ -39,7 +48,7 @@ const getDensityColor = (d) => (d < 40 ? '#10b981' : d < 70 ? '#f59e0b' : '#ef44
 const getDensityLabel = (d) => (d < 40 ? 'Low' : d < 70 ? 'Med' : 'High');
 
 function App() {
-  // State
+  // ─── Core State ─────────────────────────────────
   const [users, setUsers] = useState([]);
   const [densities, setDensities] = useState([]);
   const [weatherImpact, setWeatherImpact] = useState(0.1);
@@ -49,6 +58,16 @@ function App() {
   const [showHackathonMode, setShowHackathonMode] = useState(true);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
+
+  // ─── Signal Tracking State ──────────────────────
+  const [signalData, setSignalData] = useState(null);
+  const [heatmapData, setHeatmapData] = useState([]);
+  const [flowVectors, setFlowVectors] = useState([]);
+  const [signalAlerts, setSignalAlerts] = useState([]);
+  const [crowdDigest, setCrowdDigest] = useState(null);
+  const [zonePredictions, setZonePredictions] = useState({});
+  const [isSignalTracking, setIsSignalTracking] = useState(true);
+  const [realDevicePos, setRealDevicePos] = useState(null);
 
   const [userPrefs] = useState({
     seat: 'Sec 104, Row G',
@@ -69,13 +88,29 @@ function App() {
 
   const [timeline, setTimeline] = useState([]);
   const [chatMessages, setChatMessages] = useState([
-    { id: 1, text: "Welcome to VenueIQ! I've analyzed current crowd patterns. Ask me anything about wait times, navigation or your group.", isBot: true },
+    { id: 1, text: "Welcome to VenueIQ! I've analyzed current crowd patterns using real-time signal triangulation. Ask me anything about wait times, signal strength, or your group.", isBot: true },
   ]);
 
   const simulatorRef = useRef(null);
+  const signalServiceRef = useRef(null);
+  const prevSignalDataRef = useRef(null);
+  const prevDeviceMapRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // ─── Simulation Engine ─────────────────────────
+  // ─── Initialize Signal Tracking Service ─────────
+  useEffect(() => {
+    const signalService = new SignalTrackingService(VENUE.locations);
+    signalServiceRef.current = signalService;
+
+    // Start real GPS tracking
+    signalService.startRealTracking((data) => {
+      // This fires whenever the real device position updates
+    });
+
+    return () => signalService.stopRealTracking();
+  }, []);
+
+  // ─── Simulation Engine + Signal Processing ──────
   useEffect(() => {
     const sim = new UserSimulator(VENUE, 1000);
     simulatorRef.current = sim;
@@ -83,7 +118,7 @@ function App() {
     sim.start((newUsers) => {
       setUsers(newUsers);
 
-      // Compute densities for every venue location
+      // ── Standard density computation ──
       const computed = VENUE.locations.map((loc) => {
         const count = newUsers.filter((u) => {
           const dx = u.x - loc.x;
@@ -96,7 +131,50 @@ function App() {
       });
       setDensities(computed);
 
-      // Group coordination
+      // ── Signal Triangulation Processing ──
+      const signalService = signalServiceRef.current;
+      if (signalService && isSignalTracking) {
+        const result = signalService.processSignals(newUsers);
+        setSignalData(result.zoneSignalData);
+
+        // Build heatmap from signal data
+        const heatmap = buildHeatmapData(result.zoneSignalData);
+        setHeatmapData(heatmap);
+
+        // Compute flow vectors (crowd movement direction)
+        if (prevDeviceMapRef.current) {
+          const vectors = computeFlowVectors(result.deviceSignalMaps, prevDeviceMapRef.current);
+          setFlowVectors(vectors);
+        }
+        prevDeviceMapRef.current = result.deviceSignalMaps;
+
+        // Anomaly detection
+        const alerts = detectAnomalies(result.zoneSignalData, prevSignalDataRef.current);
+        if (alerts.length > 0) {
+          setSignalAlerts((prev) => [...alerts, ...prev].slice(0, 10));
+        }
+        prevSignalDataRef.current = result.zoneSignalData;
+
+        // Crowd digest
+        const digest = generateCrowdDigest(result.zoneSignalData);
+        setCrowdDigest(digest);
+
+        // Per-zone predictions
+        const predictions = {};
+        for (const zone of result.zoneSignalData) {
+          predictions[zone.towerId] = smartCrowdPrediction(
+            signalService, zone.towerId, eventMomentum, weatherImpact
+          );
+        }
+        setZonePredictions(predictions);
+
+        // Update real device position
+        if (signalService.realDevicePosition) {
+          setRealDevicePos(signalService.realDevicePosition);
+        }
+      }
+
+      // ── Group coordination ──
       const groupUsers = newUsers.filter((u) => group.members.some((m) => m.id === u.id));
       if (groupUsers.length > 0) {
         const centroid = calculateGroupCentroid(groupUsers);
@@ -104,13 +182,13 @@ function App() {
         setGroup((prev) => ({ ...prev, meetingPoint: optimal, centroid }));
       }
 
-      // Adaptive timeline
+      // ── Adaptive timeline ──
       setTimeline((prev) => {
         if (prev.length === 0) return generateInitialTimeline(userPrefs, VENUE, computed);
         return adaptTimeline(prev, computed, eventMomentum);
       });
 
-      // Random live score events
+      // ── Random live score events ──
       if (Math.random() > 0.995) {
         const ev = mockLiveScoreAPI();
         setLiveEvent(ev);
@@ -119,7 +197,7 @@ function App() {
     });
 
     return () => sim.stop();
-  }, [weatherImpact, eventMomentum, group.members, userPrefs]);
+  }, [weatherImpact, eventMomentum, group.members, userPrefs, isSignalTracking]);
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -135,6 +213,37 @@ function App() {
     setInputValue('');
 
     setTimeout(() => {
+      const lowerQuery = query.toLowerCase();
+
+      // ── Signal-aware chat responses ──
+      if (lowerQuery.includes('signal') || lowerQuery.includes('rssi') || lowerQuery.includes('tower') || lowerQuery.includes('tracking')) {
+        const digest = crowdDigest;
+        if (digest) {
+          setChatMessages((prev) => [...prev, {
+            id: Date.now() + 1,
+            isBot: true,
+            text: `📡 Signal Intelligence Report:\n• ${digest.totalDevices} devices tracked via ${VENUE.locations.length} cell towers\n• Venue status: ${digest.overallStatus}\n• Hottest zone: ${digest.hottestZone?.name} (${digest.hottestZone?.density}%)\n• Coolest zone: ${digest.coolestZone?.name} (${digest.coolestZone?.density}%)\n\nI'm using RSSI triangulation from virtual cell towers to estimate crowd density in real-time.`,
+            buttons: ['View Heatmap', 'Zone Details'],
+          }]);
+        }
+        return;
+      }
+
+      if (lowerQuery.includes('crowd') || lowerQuery.includes('density') || lowerQuery.includes('busy')) {
+        const predictions = Object.entries(zonePredictions);
+        const rising = predictions.filter(([_, p]) => p.trend === 'rising');
+        const falling = predictions.filter(([_, p]) => p.trend === 'falling');
+
+        setChatMessages((prev) => [...prev, {
+          id: Date.now() + 1,
+          isBot: true,
+          text: `📊 Crowd Analysis:\n• ${rising.length} zones trending UP (getting busier)\n• ${falling.length} zones trending DOWN (clearing out)\n${crowdDigest ? `• Average density: ${crowdDigest.avgDensity}%` : ''}\n\nBased on signal trajectory, ${falling.length > 0 ? `${falling[0][0]} is clearing up — good time to visit!` : 'all zones are busy. Wait 5 mins.'}`,
+          buttons: ['Show Predictions', 'Best Time to Go'],
+        }]);
+        return;
+      }
+
+      // Fall back to standard Dialogflow
       const intentData = detectIntentAndEntities(query);
       const res = generateDialogflowResponse(intentData, {
         densities: [...densities],
@@ -144,7 +253,7 @@ function App() {
       });
       setChatMessages((prev) => [...prev, { ...res, id: Date.now() + 1, isBot: true }]);
     }, 600);
-  }, [inputValue, densities, group, timeline]);
+  }, [inputValue, densities, group, timeline, crowdDigest, zonePredictions]);
 
   // ─── Computed values ───────────────────────────
   const avgWait = densities.length > 0
@@ -154,60 +263,81 @@ function App() {
     ? Math.round(densities.reduce((s, d) => s + d.density, 0) / Math.max(1, densities.length))
     : 0;
 
+  // ═══════════════════════════════════════════════
+  //                   RENDER
+  // ═══════════════════════════════════════════════
   return (
     <div className="app-container">
       <HackathonSplash show={showHackathonMode} onLaunch={() => setShowHackathonMode(false)} />
-      
-      <Header 
-        liveEvent={liveEvent} 
-        usersCount={users.length} 
-        onToggleSettings={() => setIsAdminOpen(!isAdminOpen)} 
-        isSettingsOpen={isAdminOpen} 
+
+      <Header
+        liveEvent={liveEvent}
+        usersCount={users.length}
+        onToggleSettings={() => setIsAdminOpen(!isAdminOpen)}
+        isSettingsOpen={isAdminOpen}
       />
 
       <main className="dashboard-grid no-scrollbar">
-        <AdminController 
-          isAdminOpen={isAdminOpen} 
-          setEventMomentum={setEventMomentum} 
-          setWeatherImpact={setWeatherImpact} 
-          setShowHackathonMode={setShowHackathonMode} 
+        <AdminController
+          isAdminOpen={isAdminOpen}
+          setEventMomentum={setEventMomentum}
+          setWeatherImpact={setWeatherImpact}
+          setShowHackathonMode={setShowHackathonMode}
         />
 
-        <StatsBar 
-          avgWait={avgWait} 
-          crowdLevel={crowdLevel} 
-          meetingPointName={group.meetingPoint?.name} 
+        <StatsBar
+          avgWait={avgWait}
+          crowdLevel={crowdLevel}
+          meetingPointName={group.meetingPoint?.name}
         />
 
+        {/* ─── LEFT PANEL ─── */}
         <div className="panel-left">
           <TimelinePanel timeline={timeline} />
           <GroupPanel groupCode={group.code} members={group.members} />
         </div>
 
-        <VenueMap 
-          VENUE_GRAPH={VENUE_GRAPH} 
-          densities={densities} 
-          users={users} 
-          locations={VENUE.locations} 
-          getDensityColor={getDensityColor} 
-          centroid={group.centroid} 
+        {/* ─── CENTER PANEL: Map ─── */}
+        <VenueMap
+          VENUE_GRAPH={VENUE_GRAPH}
+          densities={densities}
+          users={users}
+          locations={VENUE.locations}
+          getDensityColor={getDensityColor}
+          centroid={group.centroid}
+          heatmapData={heatmapData}
+          flowVectors={flowVectors}
+          realDevice={realDevicePos}
         />
 
+        {/* ─── RIGHT PANEL ─── */}
         <div className="panel-right">
-          <SuggestionsPanel 
-            densities={densities} 
-            getDensityColor={getDensityColor} 
-            getDensityLabel={getDensityLabel} 
-            onPlaceOrder={mockPlaceOrder} 
+          {/* Signal Intelligence Dashboard */}
+          <SignalDashboard
+            zoneSignalData={signalData}
+            crowdDigest={crowdDigest}
+            alerts={signalAlerts}
+            predictions={zonePredictions}
+            realDevice={realDevicePos}
+            isTracking={isSignalTracking}
           />
-          <LiveEventFeed 
-            description={liveEvent.description} 
-            eventMomentum={eventMomentum} 
-            weatherImpact={weatherImpact} 
+
+          <SuggestionsPanel
+            densities={densities}
+            getDensityColor={getDensityColor}
+            getDensityLabel={getDensityLabel}
+            onPlaceOrder={mockPlaceOrder}
+          />
+
+          <LiveEventFeed
+            description={liveEvent.description}
+            eventMomentum={eventMomentum}
+            weatherImpact={weatherImpact}
           />
         </div>
       </main>
 
+      {/* ─── Footer Controls ─── */}
       <div className="footer-controls">
         <div>
           <label style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
@@ -227,16 +357,28 @@ function App() {
             style={{ width: '100%', accentColor: 'var(--primary)', height: 4 }}
           />
         </div>
+        <div>
+          <label style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+            Signal Tracking
+          </label>
+          <button 
+            onClick={() => setIsSignalTracking(!isSignalTracking)}
+            className={isSignalTracking ? 'btn-primary' : 'btn-ghost'}
+            style={{ width: '100%', padding: '6px 12px', fontSize: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
+            📡 {isSignalTracking ? 'Tracking Active' : 'Start Tracking'}
+          </button>
+        </div>
       </div>
 
-      <Chatbot 
-        isChatOpen={isChatOpen} 
-        setIsChatOpen={setIsChatOpen} 
-        chatMessages={chatMessages} 
-        inputValue={inputValue} 
-        setInputValue={setInputValue} 
-        handleSendMessage={handleSendMessage} 
-        chatEndRef={chatEndRef} 
+      <Chatbot
+        isChatOpen={isChatOpen}
+        setIsChatOpen={setIsChatOpen}
+        chatMessages={chatMessages}
+        inputValue={inputValue}
+        setInputValue={setInputValue}
+        handleSendMessage={handleSendMessage}
+        chatEndRef={chatEndRef}
       />
     </div>
   );

@@ -32,6 +32,7 @@ const HackathonSplash = ({ show, onLaunch }) => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32, textAlign: 'left' }}>
               {[
                 { icon: '🧠', label: 'ML Core', desc: 'Linear regression on 4-week Kaggle dataset predicts wait times 30 min ahead' },
+                { icon: '📡', label: 'Signal Tracking', desc: 'RSSI-based cell tower trilateration tracks 1,000+ devices with real-time density mapping' },
                 { icon: '⚡', label: '1,000 Agents', desc: 'Real-time crowd simulation engine running at 10fps for live demo validation' },
                 { icon: '👥', label: 'Social Sync', desc: 'Centroid-based group meetup optimization with density-aware routing' },
               ].map((f) => (
