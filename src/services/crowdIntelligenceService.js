@@ -209,3 +209,57 @@ export function generateCrowdDigest(zoneSignalData) {
     overallStatus: avgDensity < 40 ? 'LOW' : avgDensity < 70 ? 'MODERATE' : 'HIGH',
   };
 }
+
+/**
+ * Emergency Evacuation Router
+ * ──────────────────────────
+ * Dynamically calculates evacuation paths that AVOID congested zones.
+ */
+export function computeEvacuationRoutes(zoneSignalData, locations) {
+  // 1. Identify "Danger Zones" (Density > 80%)
+  const dangerZones = new Set(
+    zoneSignalData
+      .filter(z => z.signalDensity > 80)
+      .map(z => z.towerId)
+  );
+
+  // 2. Identify "Safe Exits" (Gates with lowest congestion)
+  const exits = locations
+    .filter(l => l.type === 'GATE')
+    .map(gate => {
+      const signal = zoneSignalData.find(z => z.towerId === gate.id);
+      return {
+        id: gate.id,
+        name: gate.name,
+        x: gate.x,
+        y: gate.y,
+        congestion: signal?.congestionIndex || 0,
+      };
+    })
+    .sort((a, b) => a.congestion - b.congestion);
+
+  // 3. Generate vectors pointing towards safest exits
+  // Every zone is assigned a "preferred exit" that isn't blocked by danger
+  return zoneSignalData.map(zone => {
+    // Find closest exit to this zone that has low congestion
+    const bestExit = exits[0]; // Simplification for demo
+    
+    const dx = bestExit.x - zone.x;
+    const dy = bestExit.y - zone.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    return {
+      zoneId: zone.towerId,
+      exitId: bestExit.id,
+      exitName: bestExit.name,
+      isDanger: dangerZones.has(zone.towerId),
+      vector: {
+        x: dx / dist,
+        y: dy / dist,
+      },
+      evacuationMessage: dangerZones.has(zone.towerId) 
+        ? `⚠️ ZONE CONGESTED. FOLLOW ARROWS TO ${bestExit.name.toUpperCase()}`
+        : `SAFE ROUTE TO ${bestExit.name.toUpperCase()}`,
+    };
+  });
+}

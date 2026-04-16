@@ -13,7 +13,13 @@ import {
   computeFlowVectors,
   smartCrowdPrediction,
   generateCrowdDigest,
+  computeEvacuationRoutes,
 } from './services/crowdIntelligenceService';
+import { 
+  detectOpportunities, 
+  computeSentiment, 
+  forecastRevenue 
+} from './services/businessIntelligenceService';
 
 // Components
 import HackathonSplash from './components/HackathonSplash';
@@ -27,6 +33,7 @@ import LiveEventFeed from './components/LiveEventFeed';
 import Chatbot from './components/Chatbot';
 import AdminController from './components/AdminController';
 import SignalDashboard from './components/SignalDashboard';
+import NotificationCenter from './components/NotificationCenter';
 
 // ─── Venue Configuration ───────────────────────
 const VENUE = {
@@ -68,6 +75,13 @@ function App() {
   const [zonePredictions, setZonePredictions] = useState({});
   const [isSignalTracking, setIsSignalTracking] = useState(true);
   const [realDevicePos, setRealDevicePos] = useState(null);
+
+  // ─── Winning Features State ──────────────────
+  const [isEmergency, setIsEmergency] = useState(false);
+  const [opportunities, setOpportunities] = useState([]);
+  const [sentiment, setSentiment] = useState(null);
+  const [evacuationRoutes, setEvacuationRoutes] = useState([]);
+  const [revenueStats, setRevenueStats] = useState(null);
 
   const [userPrefs] = useState({
     seat: 'Sec 104, Row G',
@@ -141,36 +155,53 @@ function App() {
         const heatmap = buildHeatmapData(result.zoneSignalData);
         setHeatmapData(heatmap);
 
-        // Compute flow vectors (crowd movement direction)
-        if (prevDeviceMapRef.current) {
-          const vectors = computeFlowVectors(result.deviceSignalMaps, prevDeviceMapRef.current);
-          setFlowVectors(vectors);
-        }
         prevDeviceMapRef.current = result.deviceSignalMaps;
 
-        // Anomaly detection
-        const alerts = detectAnomalies(result.zoneSignalData, prevSignalDataRef.current);
-        if (alerts.length > 0) {
-          setSignalAlerts((prev) => [...alerts, ...prev].slice(0, 10));
-        }
-        prevSignalDataRef.current = result.zoneSignalData;
+        // ── Business & Safety Intelligence ──
+        if (result.zoneSignalData) {
+          // 1. Detect Opportunities (Flash Deals)
+          const opps = detectOpportunities(result.zoneSignalData.map(z => ({
+            ...z,
+            zoneType: VENUE.locations.find(l => l.id === z.towerId)?.type
+          })));
+          setOpportunities(prev => [...prev, ...opps].slice(-10));
 
-        // Crowd digest
-        const digest = generateCrowdDigest(result.zoneSignalData);
-        setCrowdDigest(digest);
+          // 2. Crowd Sentiment
+          const avgWait = computed.reduce((s, d) => s + d.predictedWait, 0) / computed.length;
+          setSentiment(computeSentiment(avgWait, eventMomentum, weatherImpact));
 
-        // Per-zone predictions
-        const predictions = {};
-        for (const zone of result.zoneSignalData) {
-          predictions[zone.towerId] = smartCrowdPrediction(
-            signalService, zone.towerId, eventMomentum, weatherImpact
-          );
-        }
-        setZonePredictions(predictions);
+          // 3. Revenue Forecast
+          setRevenueStats(forecastRevenue(result.zoneSignalData, eventMomentum));
 
-        // Update real device position
-        if (signalService.realDevicePosition) {
-          setRealDevicePos(signalService.realDevicePosition);
+          // 4. Emergency Routing
+          if (isEmergency) {
+            setEvacuationRoutes(computeEvacuationRoutes(result.zoneSignalData, VENUE.locations));
+          }
+
+          // Anomaly detection
+          const alerts = detectAnomalies(result.zoneSignalData, prevSignalDataRef.current);
+          if (alerts.length > 0) {
+            setSignalAlerts((prev) => [...alerts, ...prev].slice(0, 10));
+          }
+          prevSignalDataRef.current = result.zoneSignalData;
+
+          // Crowd digest
+          const digest = generateCrowdDigest(result.zoneSignalData);
+          setCrowdDigest(digest);
+
+          // Per-zone predictions
+          const predictions = {};
+          for (const zone of result.zoneSignalData) {
+            predictions[zone.towerId] = smartCrowdPrediction(
+              signalService, zone.towerId, eventMomentum, weatherImpact
+            );
+          }
+          setZonePredictions(predictions);
+
+          // Update real device position
+          if (signalService.realDevicePosition) {
+            setRealDevicePos(signalService.realDevicePosition);
+          }
         }
       }
 
@@ -308,6 +339,8 @@ function App() {
           heatmapData={heatmapData}
           flowVectors={flowVectors}
           realDevice={realDevicePos}
+          isEmergency={isEmergency}
+          evacuationRoutes={evacuationRoutes}
         />
 
         {/* ─── RIGHT PANEL ─── */}
@@ -359,6 +392,23 @@ function App() {
         </div>
         <div>
           <label style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+            Demo Safety
+          </label>
+          <button 
+            onClick={() => setIsEmergency(!isEmergency)}
+            className={isEmergency ? 'pulse-fast' : ''}
+            style={{ 
+              width: '100%', padding: '6px 12px', fontSize: '0.6rem',
+              background: isEmergency ? '#ef4444' : 'rgba(255,255,255,0.05)',
+              border: isEmergency ? 'none' : '1px solid var(--glass-border)',
+              borderRadius: 6, color: 'white', fontWeight: 900
+            }}
+          >
+            {isEmergency ? '⚠️ EXIT EVACUATION' : '🚨 Trigger Alarm'}
+          </button>
+        </div>
+        <div>
+          <label style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
             Signal Tracking
           </label>
           <button 
@@ -366,10 +416,16 @@ function App() {
             className={isSignalTracking ? 'btn-primary' : 'btn-ghost'}
             style={{ width: '100%', padding: '6px 12px', fontSize: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
           >
-            📡 {isSignalTracking ? 'Tracking Active' : 'Start Tracking'}
+            📡 {isSignalTracking ? 'Active' : 'Start'}
           </button>
         </div>
       </div>
+
+      <NotificationCenter 
+        opportunities={opportunities} 
+        emergencyMode={isEmergency} 
+        sentiment={sentiment} 
+      />
 
       <Chatbot
         isChatOpen={isChatOpen}
