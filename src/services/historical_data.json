@@ -1,0 +1,26 @@
+[
+  {
+    "location_id": "stand_1",
+    "time_segment": "Weekday",
+    "avg_wait": 13.74,
+    "avg_density": 68.77
+  },
+  {
+    "location_id": "stand_2",
+    "time_segment": "Weekday",
+    "avg_wait": 11.98,
+    "avg_density": 59.92
+  },
+  {
+    "location_id": "stand_3",
+    "time_segment": "Weekday",
+    "avg_wait": 12.27,
+    "avg_density": 61.27
+  },
+  {
+    "location_id": "stand_4",
+    "time_segment": "Weekday",
+    "avg_wait": 12.52,
+    "avg_density": 62.61
+  }
+]
