@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Map as MapIcon, Layers, Radio, Eye, Search, Target } from 'lucide-react';
+import { Map as MapIcon, Layers, Radio, Eye, Search, Box } from 'lucide-react';
 import SignalHeatmap from './SignalHeatmap';
 
 // ─── Stadium Structure ─────────────────────────────
@@ -38,6 +38,7 @@ const VenueMap = ({
   const [hoveredZone, setHoveredZone] = useState(null);
   const [showUsers, setShowUsers] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [is3D, setIs3D] = useState(false);
   
   const canvasRef = useRef(null);
 
@@ -49,30 +50,38 @@ const VenueMap = ({
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
     const height = canvas.height;
+    let animationFrameId;
 
-    ctx.clearRect(0, 0, width, height);
+    const renderLoop = () => {
+      ctx.clearRect(0, 0, width, height);
 
-    // Batch draw users
-    ctx.fillStyle = isEmergency ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
-    users.forEach(u => {
-      ctx.beginPath();
-      ctx.arc(u.x, u.y, 1.2, 0, Math.PI * 2);
-      ctx.fill();
-    });
+      // Batch draw users
+      ctx.fillStyle = isEmergency ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
+      users.forEach(u => {
+        ctx.beginPath();
+        ctx.arc(u.x, u.y, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
 
-    // Highlight group members
-    ctx.fillStyle = '#6366f1';
-    users.filter(u => u.groupId).forEach(u => {
-      ctx.beginPath();
-      ctx.arc(u.x, u.y, 3, 0, Math.PI * 2);
-      ctx.fill();
-      // Glow
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = '#6366f1';
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    });
+      // Highlight group members
+      ctx.fillStyle = '#6366f1';
+      users.filter(u => u.groupId).forEach(u => {
+        ctx.beginPath();
+        ctx.arc(u.x, u.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Glow
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#6366f1';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      });
 
+      animationFrameId = requestAnimationFrame(renderLoop);
+    };
+
+    renderLoop();
+
+    return () => cancelAnimationFrame(animationFrameId);
   }, [users, showUsers, isEmergency]);
 
   const zoneCards = useMemo(() => {
@@ -139,11 +148,25 @@ const VenueMap = ({
               style={{ background: showUsers ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: 6, padding: '3px 6px', color: 'white', display: 'flex', alignItems: 'center', gap: 3 }}>
               <Eye size={9} /><span style={{ fontSize: '0.45rem', fontWeight: 700 }}>Crowd</span>
             </button>
+            <button onClick={() => setIs3D(!is3D)}
+              style={{ background: is3D ? 'rgba(236,72,153,0.2)' : 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: 6, padding: '3px 6px', color: 'white', display: 'flex', alignItems: 'center', gap: 3 }}>
+              <Box size={9} /><span style={{ fontSize: '0.45rem', fontWeight: 700 }}>3D View</span>
+            </button>
           </div>
         )}
       </div>
 
-      <div className="map-viewport" style={{ position: 'relative' }}>
+      <div className="map-viewport" style={{ 
+        position: 'relative',
+        perspective: '1200px',
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0,
+          transform: is3D ? 'rotateX(55deg) rotateZ(-30deg) translateZ(-50px) scale(0.9)' : 'none',
+          transformStyle: 'preserve-3d',
+          transition: 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        }}>
         {/* ─── LAYER 1: Background Canvas ─── */}
         <canvas 
           ref={canvasRef}
@@ -252,6 +275,7 @@ const VenueMap = ({
             </g>
           )}
         </svg>
+        </div>
 
         {isEmergency && (
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}>

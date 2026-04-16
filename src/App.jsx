@@ -130,8 +130,8 @@ function App() {
     const sim = new UserSimulator(VENUE, 1000);
     simulatorRef.current = sim;
 
-    sim.start((newUsers) => {
-      setUsers(newUsers);
+    sim.start(null, (newUsers) => {
+      setUsers([...newUsers]);
 
       // ── Standard density computation ──
       const computed = VENUE.locations.map((loc) => {

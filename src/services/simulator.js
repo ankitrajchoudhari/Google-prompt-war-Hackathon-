@@ -26,16 +26,17 @@ export class UserSimulator {
     };
   }
 
-  start(callback) {
+  start(animCallback, stateCallback) {
     this.isRunning = true;
-    this.loop(callback);
+    this.lastStateTime = 0;
+    this.loop(animCallback, stateCallback);
   }
 
   stop() {
     this.isRunning = false;
   }
 
-  loop(callback) {
+  loop(animCallback, stateCallback) {
     if (!this.isRunning) return;
 
     // Movement Logic
@@ -47,20 +48,22 @@ export class UserSimulator {
       if (dist < 5) {
         user.target = this.getRandomTarget();
       } else {
-        const moveStep = user.speed * this.timeAcceleration;
+        const moveStep = (user.speed * this.timeAcceleration) / 6; // Adjusted for 60fps
         user.x += (dx / dist) * moveStep;
         user.y += (dy / dist) * moveStep;
       }
     });
 
-    callback(this.users);
+    if (animCallback) animCallback(this.users);
     
-    // Smooth animation at 30fps
-    requestAnimationFrame(() => {
-      if (this.isRunning) {
-        // Slow down the state update frequency slightly for performance
-        setTimeout(() => this.loop(callback), 100); 
-      }
-    });
+    // Throttle heavy React state updates to 2 FPS
+    const now = Date.now();
+    if (now - this.lastStateTime > 500 && stateCallback) {
+      stateCallback(this.users);
+      this.lastStateTime = now;
+    }
+    
+    // Smooth animation at 60fps
+    requestAnimationFrame(() => this.loop(animCallback, stateCallback));
   }
 }
