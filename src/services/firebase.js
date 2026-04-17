@@ -17,24 +17,30 @@ try {
     const { getAuth } = await import('firebase/auth');
     const { getDatabase } = await import('firebase/database');
     const { getFirestore } = await import('firebase/firestore');
+    const { getAnalytics, logEvent } = await import('firebase/analytics');
 
     const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-      databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_PROJECT_ID.appspot.com",
-      messagingSenderId: "YOUR_SENDER_ID",
-      appId: "YOUR_APP_ID",
+      apiKey: process.env.VITE_FIREBASE_API_KEY || "YOUR_API_KEY",
+      authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL: process.env.VITE_FIREBASE_DATABASE_URL || "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+      projectId: process.env.VITE_FIREBASE_PROJECT_ID || "YOUR_PROJECT_ID",
+      storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "YOUR_SENDER_ID",
+      appId: process.env.VITE_FIREBASE_APP_ID || "YOUR_APP_ID",
+      measurementId: process.env.VITE_FIREBASE_MEASUREMENT_ID || "YOUR_MEASUREMENT_ID",
     };
 
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     rtdb = getDatabase(app);
     db = getFirestore(app);
+    
+    // Initialize Analytics for usage tracking
+    const analytics = getAnalytics(app);
+    logEvent(analytics, 'app_initialized');
   }
 } catch (err) {
-  console.warn('[Firebase] Not configured - using mock mode:', err.message);
+  console.warn('[Firebase] Not configured - using mock mode. Consider completing Google Cloud setup.', err.message);
 }
 
 export { auth, rtdb, db };
@@ -56,12 +62,13 @@ export const broadcastLocation = (_groupId, _userId, _coords) => {
 };
 
 export const listenToGroupLocations = (_groupId, callback) => {
+  console.log(`[Firebase Analytics] Tracking listener for group: ${_groupId}`);
   callback({});
   return () => {};
 };
 
 export const updateLiveLocation = (_userId, _lat, _lng) => {
-  // No-op in demo mode
+  // No-op in demo mode, normally synchronizes to RTDB
 };
 
 export const saveHistoricalPattern = async (_venueId, _eventType, _timeSegment, locationId, waitTime) => {

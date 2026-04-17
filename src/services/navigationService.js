@@ -25,7 +25,14 @@ export const calculateEdgeCongestion = (edge, userCount) => {
   return Math.min(100, factor * 100);
 };
 
-export const findOptimalPath = (startId, endId, densities, _eventPhase = 'ongoing') => {
+const pathCache = new Map();
+
+export const findOptimalPath = (startId, endId, densities, eventPhase = 'ongoing') => {
+  const cacheKey = `${startId}-${endId}-${eventPhase}`;
+  if (pathCache.has(cacheKey)) {
+    return pathCache.get(cacheKey);
+  }
+
   // Dijkstra with dynamic weights
   // Weight = length * (1 + congestion_factor)
   // If phase = exit, multiply exit edges by 2x
@@ -49,5 +56,6 @@ export const findOptimalPath = (startId, endId, densities, _eventPhase = 'ongoin
     style: 'GREEN'
   });
 
+  pathCache.set(cacheKey, results);
   return results;
 };

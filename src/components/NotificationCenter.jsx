@@ -1,19 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, ShoppingBag, ShieldAlert, Heart, X, Zap } from 'lucide-react';
 
-const NotificationCenter = ({ opportunities, emergencyMode, sentiment }) => {
+const NotificationCenter = React.memo(({ opportunities, emergencyMode, sentiment }) => {
   const [visibleNotifications, setVisibleNotifications] = useState([]);
+  const seenIds = useRef(new Set());
 
   // Handle incoming opportunities/deals
   useEffect(() => {
     if (opportunities && opportunities.length > 0) {
       const latest = opportunities[opportunities.length - 1];
       
-      // Prevent duplicates
-      if (!visibleNotifications.some(n => n.id === latest.expiry)) {
+      // Prevent duplicates and re-adding dismissed ones
+      if (!seenIds.current.has(latest.id)) {
+        seenIds.current.add(latest.id);
         const newNotif = {
-          id: latest.expiry,
           ...latest,
           timestamp: Date.now(),
         };
@@ -27,22 +28,28 @@ const NotificationCenter = ({ opportunities, emergencyMode, sentiment }) => {
     }
   }, [opportunities]);
 
-  const removeNotif = (id) => {
+  const removeNotif = useCallback((id) => {
     setVisibleNotifications(prev => prev.filter(n => n.id !== id));
-  };
+  }, []);
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 80,
-      right: 24,
-      width: 320,
-      zIndex: 1000,
-      pointerEvents: 'none',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 12,
-    }}>
+    <div 
+      role="region" 
+      aria-live="polite" 
+      aria-atomic="false"
+      aria-label="Notification Center"
+      style={{
+        position: 'fixed',
+        top: 80,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 380,
+        zIndex: 9999,
+        pointerEvents: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+      }}>
       <AnimatePresence>
         {/* Emergency Banner */}
         {emergencyMode && (
@@ -64,7 +71,7 @@ const NotificationCenter = ({ opportunities, emergencyMode, sentiment }) => {
             }}
           >
             <ShieldAlert size={28} className="pulse-fast" />
-            <div>
+            <div role="alert" aria-live="assertive">
               <div style={{ fontSize: '0.8rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                 Emergency Mode
               </div>
@@ -153,6 +160,7 @@ const NotificationCenter = ({ opportunities, emergencyMode, sentiment }) => {
                 </div>
                 <button 
                   className="btn-primary" 
+                  aria-label={`Redeem offer: ${n.title}`}
                   style={{ 
                     padding: '6px 14px', fontSize: '0.55rem', borderRadius: 8,
                     background: 'var(--primary)', border: 'none', color: 'white',
@@ -169,6 +177,6 @@ const NotificationCenter = ({ opportunities, emergencyMode, sentiment }) => {
       </AnimatePresence>
     </div>
   );
-};
+});
 
 export default NotificationCenter;

@@ -46,6 +46,7 @@ export function detectOpportunities(zoneData) {
     // Opportunity 1: Empty food stand
     if (zone.zoneType === 'FOOD' && zone.signalDensity < 25) {
       opportunities.push({
+        id: `FLASH_OFFER_${zone.towerId}`,
         type: 'FLASH_OFFER',
         zoneId: zone.towerId,
         title: 'Empty Line Alert!',
@@ -58,6 +59,7 @@ export function detectOpportunities(zoneData) {
     // Opportunity 2: Merch surge (High intent)
     if (zone.zoneType === 'SHOP' && zone.signalDensity > 70) {
       opportunities.push({
+        id: `VIP_UPGRADE_${zone.towerId}`,
         type: 'VIP_UPGRADE',
         zoneId: zone.towerId,
         title: 'VIP Access Available',

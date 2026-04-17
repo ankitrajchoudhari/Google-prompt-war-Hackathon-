@@ -1,10 +1,10 @@
 import React from 'react';
 import { Clock } from 'lucide-react';
 
-const TimelinePanel = ({ timeline }) => {
+const TimelinePanel = React.memo(({ timeline }) => {
   return (
-    <div className="panel-section">
-      <div className="panel-section-title"><Clock size={12} /> ML Timeline</div>
+    <div className="panel-section" role="region" aria-label="Timeline Panel">
+      <div className="panel-section-title"><Clock size={12} aria-hidden="true" /> ML Timeline</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {timeline.length === 0 && (
           <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Generating optimized schedule...</p>
@@ -29,6 +29,6 @@ const TimelinePanel = ({ timeline }) => {
       </div>
     </div>
   );
-};
+});
 
 export default TimelinePanel;
