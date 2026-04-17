@@ -442,11 +442,13 @@ function App() {
         </div>
       </div>
 
-      <NotificationCenter 
-        opportunities={opportunities} 
-        emergencyMode={isEmergency} 
-        sentiment={sentiment} 
-      />
+      {!showHackathonMode && (
+        <NotificationCenter 
+          opportunities={opportunities} 
+          emergencyMode={isEmergency} 
+          sentiment={sentiment} 
+        />
+      )}
 
       <Chatbot
         isChatOpen={isChatOpen}

@@ -2,6 +2,84 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, ShoppingBag, ShieldAlert, Heart, X, Zap } from 'lucide-react';
 
+const NotificationCard = ({ n, onRemove }) => {
+  const [redeemed, setRedeemed] = useState(false);
+  const [redeemCode, setRedeemCode] = useState('');
+
+  const handleRedeem = () => {
+    if (redeemed) return;
+    setRedeemed(true);
+    setRedeemCode(`VQ-${Math.floor(Math.random() * 8999) + 1000}`); // Generates 4 digit code
+    // Remove after 4 seconds to read the code
+    setTimeout(() => {
+      onRemove(n.id);
+    }, 4000);
+  };
+
+  return (
+    <motion.div
+      initial={{ x: 350, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 350, opacity: 0 }}
+      whileHover={{ scale: 1.02 }}
+      style={{
+        padding: '16px',
+        background: 'rgba(99, 102, 241, 0.1)',
+        backdropFilter: 'blur(16px)',
+        borderRadius: 20,
+        border: '1px solid rgba(99, 102, 241, 0.3)',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+        pointerEvents: 'auto',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        height: 3,
+        background: redeemed ? '#10b981' : 'var(--primary)',
+        width: '100%',
+        animation: redeemed ? 'none' : 'linear-progress 8s linear forwards',
+      }} />
+
+      <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 10,
+          background: redeemed ? '#10b981' : 'var(--primary)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          transition: 'background 0.3s ease',
+        }}>
+          {n.type === 'FLASH_OFFER' ? <Zap size={16} color="white" fill="white" /> : <ShoppingBag size={16} color="white" />}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 900, marginBottom: 4 }}>{n.title}</div>
+            <X size={12} style={{ cursor: 'pointer', opacity: 0.5 }} onClick={() => onRemove(n.id)} />
+          </div>
+          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: 8 }}>
+            {n.message}
+          </div>
+          <button 
+            className="btn-primary" 
+            aria-label={`Redeem offer: ${n.title}`}
+            style={{ 
+              padding: '6px 14px', fontSize: '0.55rem', borderRadius: 8,
+              background: redeemed ? '#10b981' : 'var(--primary)', border: 'none', color: 'white',
+              fontWeight: 800, cursor: redeemed ? 'default' : 'pointer',
+              transition: 'background 0.3s ease',
+            }}
+            onClick={handleRedeem}
+          >
+            {redeemed ? `REDEEMED: ${redeemCode}` : 'REDEEM OFFER'}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 const NotificationCenter = React.memo(({ opportunities, emergencyMode, sentiment }) => {
   const [visibleNotifications, setVisibleNotifications] = useState([]);
   const seenIds = useRef(new Set());
@@ -41,8 +119,7 @@ const NotificationCenter = React.memo(({ opportunities, emergencyMode, sentiment
       style={{
         position: 'fixed',
         top: 80,
-        left: '50%',
-        transform: 'translateX(-50%)',
+        right: 24,
         width: 380,
         zIndex: 9999,
         pointerEvents: 'none',
@@ -97,6 +174,8 @@ const NotificationCenter = React.memo(({ opportunities, emergencyMode, sentiment
               alignItems: 'center',
               justifyContent: 'space-between',
               pointerEvents: 'auto',
+              alignSelf: 'flex-end',
+              gap: 20,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -113,66 +192,7 @@ const NotificationCenter = React.memo(({ opportunities, emergencyMode, sentiment
 
         {/* Dynamic Flash Notifications */}
         {visibleNotifications.map((n) => (
-          <motion.div
-            key={n.id}
-            initial={{ x: 350, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 350, opacity: 0 }}
-            whileHover={{ scale: 1.02 }}
-            style={{
-              padding: '16px',
-              background: 'rgba(99, 102, 241, 0.1)',
-              backdropFilter: 'blur(16px)',
-              borderRadius: 20,
-              border: '1px solid rgba(99, 102, 241, 0.3)',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-              pointerEvents: 'auto',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            {/* Animated background bar */}
-            <div style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              height: 3,
-              background: 'var(--primary)',
-              width: '100%',
-              animation: 'linear-progress 8s linear forwards',
-            }} />
-
-            <div style={{ display: 'flex', gap: 12 }}>
-              <div style={{
-                width: 32, height: 32, borderRadius: 10,
-                background: 'var(--primary)', display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                {n.type === 'FLASH_OFFER' ? <Zap size={16} color="white" fill="white" /> : <ShoppingBag size={16} color="white" />}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 900, marginBottom: 4 }}>{n.title}</div>
-                  <X size={12} style={{ cursor: 'pointer', opacity: 0.5 }} onClick={() => removeNotif(n.id)} />
-                </div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: 8 }}>
-                  {n.message}
-                </div>
-                <button 
-                  className="btn-primary" 
-                  aria-label={`Redeem offer: ${n.title}`}
-                  style={{ 
-                    padding: '6px 14px', fontSize: '0.55rem', borderRadius: 8,
-                    background: 'var(--primary)', border: 'none', color: 'white',
-                    fontWeight: 800, cursor: 'pointer',
-                  }}
-                  onClick={() => removeNotif(n.id)}
-                >
-                  REDEEM OFFER
-                </button>
-              </div>
-            </div>
-          </motion.div>
+          <NotificationCard key={n.id} n={n} onRemove={removeNotif} />
         ))}
       </AnimatePresence>
     </div>
